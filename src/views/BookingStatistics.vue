@@ -1,112 +1,249 @@
 <template>
   <div class="booking-statistics">
-    <div class="header">
-      <h1 class="page-title">Booking Statistics</h1>
-      <router-link to="/bookings" class="btn-secondary">Back to Bookings</router-link>
+    <h1 class="page-title">Rental Booking Dashboard</h1>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label for="periodSelect">View By:</label>
+        <select id="periodSelect" v-model="selectedPeriod" @change="loadChartData">
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="yearSelect">Year:</label>
+        <select id="yearSelect" v-model="selectedYear" @change="loadChartData">
+          <option v-for="year in availableYears" :key="year" :value="year">
+            {{ year }}
+          </option>
+        </select>
+      </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading statistics...</div>
+    <div v-if="loading" class="loading">Loading chart data...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else class="stats-container">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon">📊</div>
-          <div class="stat-number">{{ stats.totalBookings }}</div>
-          <div class="stat-label">Total Bookings</div>
-        </div>
+    <div v-else class="chart-container">
+      <canvas ref="chartCanvas"></canvas>
+    </div>
 
-        <div class="stat-card upcoming">
-          <div class="stat-icon">📅</div>
-          <div class="stat-number">{{ stats.upcomingBookings }}</div>
-          <div class="stat-label">Upcoming Bookings</div>
-        </div>
-
-        <div class="stat-card ongoing">
-          <div class="stat-icon">🚗</div>
-          <div class="stat-number">{{ stats.ongoingBookings }}</div>
-          <div class="stat-label">Ongoing Bookings</div>
-        </div>
-
-        <div class="stat-card completed">
-          <div class="stat-icon">✅</div>
-          <div class="stat-number">{{ stats.completedBookings }}</div>
-          <div class="stat-label">Completed Bookings</div>
-        </div>
-
-        <div class="stat-card revenue">
-          <div class="stat-icon">💰</div>
-          <div class="stat-number">{{ formatCurrency(stats.totalRevenue) }}</div>
-          <div class="stat-label">Total Revenue</div>
-        </div>
-      </div>
+    <div v-if="!loading && !error && chartData" class="data-table">
+      <h3>Booking Data</h3>
+      <table>
+        <thead>
+          <tr>
+            <th v-for="(label, index) in chartData.labels" :key="index">{{ label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td v-for="(count, index) in chartData.counts" :key="index">{{ count }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="total">Total Bookings: {{ chartData.total }}</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { Chart, registerables } from 'chart.js';
 import { bookingService } from '../services/bookingService';
-import type { BookingStatistics } from '../types';
+import type { BookingChartData } from '../types';
 
-const stats = ref<BookingStatistics>({
-  totalBookings: 0,
-  upcomingBookings: 0,
-  ongoingBookings: 0,
-  completedBookings: 0,
-  totalRevenue: 0,
-});
+// Register Chart.js components
+Chart.register(...registerables);
 
+const chartCanvas = ref<HTMLCanvasElement | null>(null);
+let chartInstance: Chart | null = null;
+
+const chartData = ref<BookingChartData | null>(null);
 const loading = ref(false);
 const error = ref('');
 
-const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-  }).format(amount);
-};
+const selectedPeriod = ref<'monthly' | 'quarterly'>('monthly');
+const selectedYear = ref(new Date().getFullYear());
 
-const loadStatistics = async () => {
+// Generate available years (current year and 5 years back)
+const availableYears = ref<number[]>([]);
+for (let i = 0; i < 6; i++) {
+  availableYears.value.push(new Date().getFullYear() - i);
+}
+
+const loadChartData = async () => {
   loading.value = true;
   error.value = '';
   try {
-    stats.value = await bookingService.getBookingStatistics();
+    chartData.value = await bookingService.getBookingChart(
+      selectedPeriod.value,
+      selectedYear.value
+    );
   } catch (err) {
-    error.value = 'Failed to load statistics';
+    error.value = 'Failed to load chart data';
     console.error(err);
   } finally {
     loading.value = false;
+    // Wait for DOM to update after loading is set to false
+    await nextTick();
+    updateChart();
   }
 };
 
+const updateChart = () => {
+  if (!chartCanvas.value || !chartData.value) {
+    console.log('Chart update skipped:', {
+      hasCanvas: !!chartCanvas.value,
+      hasData: !!chartData.value
+    });
+    return;
+  }
+
+  console.log('Creating chart with data:', chartData.value);
+
+  // Destroy existing chart if it exists
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  const ctx = chartCanvas.value.getContext('2d');
+  if (!ctx) {
+    console.error('Failed to get canvas context');
+    return;
+  }
+
+  const chartTitle = selectedPeriod.value === 'monthly'
+    ? `Booking Results (Monthly) for ${selectedYear.value}`
+    : `Booking Results (Quarterly) for ${selectedYear.value}`;
+
+  chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: chartData.value.labels,
+      datasets: [{
+        label: 'Number of Bookings',
+        data: chartData.value.counts,
+        backgroundColor: '#4ADE80',
+        borderColor: '#22C55E',
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: chartTitle,
+          font: {
+            size: 18,
+            weight: 'bold'
+          },
+          color: '#10b981'
+        },
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              return `Bookings: ${context.parsed.y}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1,
+            precision: 0
+          },
+          title: {
+            display: true,
+            text: 'Number of Bookings'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: selectedPeriod.value === 'monthly' ? 'Month' : 'Quarter'
+          }
+        }
+      }
+    }
+  });
+
+  console.log('Chart created successfully');
+};
+
 onMounted(() => {
-  loadStatistics();
+  loadChartData();
+});
+
+onUnmounted(() => {
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
 });
 </script>
 
 <style scoped>
 .booking-statistics {
   padding: 2rem;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-  flex-wrap: wrap;
-  gap: 1rem;
 }
 
 .page-title {
   font-size: 2rem;
-  color: #111827;
+  color: #10b981;
+  text-align: center;
+  margin-bottom: 2rem;
+  font-weight: bold;
 }
 
-.loading, .error {
+.filters {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-group label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.filter-group select {
+  padding: 0.5rem 1rem;
+  border: 2px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background-color: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.filter-group select:hover {
+  border-color: #10b981;
+}
+
+.filter-group select:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.loading,
+.error {
   text-align: center;
   padding: 3rem;
   font-size: 1.125rem;
@@ -116,76 +253,82 @@ onMounted(() => {
   color: #ef4444;
 }
 
-.stats-container {
+.chart-container {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  min-height: 450px;
+  position: relative;
+}
+
+.chart-container canvas {
+  height: 400px !important;
+  width: 100% !important;
+}
+
+.data-table {
   background: white;
   border-radius: 0.75rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   padding: 2rem;
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 2rem;
+.data-table h3 {
+  color: #111827;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
 }
 
-.stat-card {
-  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
-  padding: 2rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  text-align: center;
-  transition: transform 0.2s, box-shadow 0.2s;
-  border: 2px solid #e5e7eb;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-}
-
-.stat-card.upcoming {
-  border-color: #3b82f6;
-  background: linear-gradient(135deg, #dbeafe 0%, #ffffff 100%);
-}
-
-.stat-card.ongoing {
-  border-color: #f59e0b;
-  background: linear-gradient(135deg, #fef3c7 0%, #ffffff 100%);
-}
-
-.stat-card.completed {
-  border-color: #10b981;
-  background: linear-gradient(135deg, #d1fae5 0%, #ffffff 100%);
-}
-
-.stat-card.revenue {
-  border-color: #8b5cf6;
-  background: linear-gradient(135deg, #ede9fe 0%, #ffffff 100%);
-}
-
-.stat-icon {
-  font-size: 3rem;
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
   margin-bottom: 1rem;
 }
 
-.stat-number {
-  font-size: 2.5rem;
-  font-weight: bold;
-  color: #111827;
-  margin-bottom: 0.5rem;
+.data-table th,
+.data-table td {
+  padding: 0.75rem;
+  text-align: center;
+  border: 1px solid #e5e7eb;
 }
 
-.stat-label {
-  font-size: 1rem;
-  color: #6b7280;
-  font-weight: 500;
+.data-table th {
+  background-color: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.data-table td {
+  color: #111827;
+}
+
+.data-table .total {
+  text-align: right;
+  font-weight: 600;
+  color: #10b981;
+  font-size: 1.125rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 768px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group select {
+    width: 100%;
+  }
+
+  .data-table {
+    overflow-x: auto;
   }
 }
 </style>
-

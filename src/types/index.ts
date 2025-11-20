@@ -73,3 +73,10 @@ export interface BookingStatistics {
   totalRevenue: number;
 }
 
+export interface BookingChartData {
+  period: "monthly" | "quarterly";
+  year: number;
+  labels: string[];
+  counts: number[];
+  total: number;
+}

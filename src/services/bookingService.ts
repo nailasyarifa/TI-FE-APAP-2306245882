@@ -1,31 +1,49 @@
-import api from './api';
-import type { RentalBooking, ApiResponse, BookingStatistics } from '../types';
+import api from "./api";
+import type { RentalBooking, ApiResponse, BookingStatistics } from "../types";
 
 export const bookingService = {
   async getAllBookings(): Promise<RentalBooking[]> {
-    const response = await api.get<ApiResponse<RentalBooking[]>>('/bookings');
+    const response = await api.get<ApiResponse<RentalBooking[]>>("/bookings");
     return response.data.data;
   },
 
   async getBookingById(id: string): Promise<RentalBooking> {
-    const response = await api.get<ApiResponse<RentalBooking>>(`/bookings/${id}`);
+    const response = await api.get<ApiResponse<RentalBooking>>(
+      `/bookings/${id}`
+    );
     return response.data.data;
   },
 
   async createBooking(booking: Partial<RentalBooking>): Promise<RentalBooking> {
-    const response = await api.post<ApiResponse<RentalBooking>>('/bookings', booking);
+    const response = await api.post<ApiResponse<RentalBooking>>(
+      "/bookings",
+      booking
+    );
     return response.data.data;
   },
 
-  async updateBooking(id: string, booking: Partial<RentalBooking>): Promise<RentalBooking> {
-    const response = await api.put<ApiResponse<RentalBooking>>(`/bookings/${id}`, booking);
+  async updateBooking(
+    id: string,
+    booking: Partial<RentalBooking>
+  ): Promise<RentalBooking> {
+    const response = await api.put<ApiResponse<RentalBooking>>(
+      `/bookings/${id}`,
+      booking
+    );
     return response.data.data;
   },
 
-  async updateBookingStatus(id: string, status: string): Promise<RentalBooking> {
-    const response = await api.put<ApiResponse<RentalBooking>>(`/bookings/${id}/status`, null, {
-      params: { status }
-    });
+  async updateBookingStatus(
+    id: string,
+    status: string
+  ): Promise<RentalBooking> {
+    const response = await api.put<ApiResponse<RentalBooking>>(
+      `/bookings/${id}/status`,
+      null,
+      {
+        params: { status },
+      }
+    );
     return response.data.data;
   },
 
@@ -34,8 +52,22 @@ export const bookingService = {
   },
 
   async getBookingStatistics(): Promise<BookingStatistics> {
-    const response = await api.get<ApiResponse<BookingStatistics>>('/bookings/statistics');
+    const response = await api.get<ApiResponse<BookingStatistics>>(
+      "/bookings/statistics"
+    );
+    return response.data.data;
+  },
+
+  async getBookingChart(
+    period: "monthly" | "quarterly",
+    year: number
+  ): Promise<BookingChartData> {
+    const response = await api.get<ApiResponse<BookingChartData>>(
+      "/bookings/chart",
+      {
+        params: { period, year },
+      }
+    );
     return response.data.data;
   },
 };
-
