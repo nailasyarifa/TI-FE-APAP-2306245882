@@ -1,5 +1,10 @@
 import api from "./api";
-import type { RentalBooking, ApiResponse, BookingStatistics } from "../types";
+import type {
+  RentalBooking,
+  ApiResponse,
+  BookingStatistics,
+  BookingChartData,
+} from "../types";
 
 export const bookingService = {
   async getAllBookings(): Promise<RentalBooking[]> {
